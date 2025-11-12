@@ -74,14 +74,24 @@ class DatabaseManager:
 
     @contextmanager
     def _get_connection(self):
-        connection = psycopg.connect(
-            dbname=self._settings.db_name,
-            user=self._settings.db_user,
-            password=self._settings.db_password,
-            host=self._settings.db_host,
-            port=self._settings.db_port,
-            row_factory=dict_row,  # type: ignore[arg-type]
-        )
+        # Prefer DATABASE_URL if provided; otherwise use discrete parameters.
+        if getattr(self._settings, "database_url", None):
+            dsn = self._settings.database_url or ""
+            # Ensure sslmode is present when needed (e.g., Render managed Postgres)
+            if "sslmode=" not in dsn and getattr(self._settings, "db_sslmode", ""):
+                sep = "&" if ("?" in dsn) else "?"
+                dsn = f"{dsn}{sep}sslmode={self._settings.db_sslmode}"
+            connection = psycopg.connect(dsn, row_factory=dict_row)  # type: ignore[arg-type]
+        else:
+            connection = psycopg.connect(
+                dbname=self._settings.db_name,
+                user=self._settings.db_user,
+                password=self._settings.db_password,
+                host=self._settings.db_host,
+                port=self._settings.db_port,
+                sslmode=getattr(self._settings, "db_sslmode", "disable"),
+                row_factory=dict_row,  # type: ignore[arg-type]
+            )
         try:
             yield connection
         finally:
