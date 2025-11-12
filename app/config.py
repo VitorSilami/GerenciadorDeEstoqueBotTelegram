@@ -42,10 +42,12 @@ def _get_env(name: str, *, default: Optional[str] = None) -> str:
 
 
 def get_settings() -> Settings:
+    # Accept both DB_PASS and DB_PASSWORD for convenience
+    db_password_value = os.getenv("DB_PASS") or os.getenv("DB_PASSWORD") or ""
     return Settings(
         telegram_token=_get_env("TOKEN_TELEGRAM"),
         db_user=os.getenv("DB_USER", ""),
-        db_password=os.getenv("DB_PASS", ""),
+        db_password=db_password_value,
         db_host=os.getenv("DB_HOST", ""),
         db_name=os.getenv("DB_NAME", ""),
         db_port=int(os.getenv("DB_PORT", "5432")),

@@ -8,13 +8,27 @@ interface Produto { id:number; nome:string; categoria:string; quantidade:number;
 export default function App(){
   const [produtos, setProdutos] = useState<Produto[]>([])
   const [vendas, setVendas] = useState<any>(null)
+  const [dashboard, setDashboard] = useState<any>(null)
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<keyof Produto>('nome')
   const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc')
 
   useEffect(()=>{
-    fetch('/api/produtos').then(r=>r.json()).then(j=> setProdutos(j.items||[]))
-    fetch('/api/vendas').then(r=>r.json()).then(setVendas)
+    const load = async()=>{
+      try {
+        const [p, v, d] = await Promise.all([
+          fetch('/api/produtos').then(r=>r.json()).catch(()=>null),
+          fetch('/api/vendas').then(r=>r.json()).catch(()=>null),
+          fetch('/api/dashboard').then(r=>r.json()).catch(()=>null),
+        ])
+        if(p?.items) setProdutos(p.items)
+        if(v) setVendas(v)
+        if(d) setDashboard(d)
+      } catch {}
+    }
+    load()
+    const id = setInterval(load, 60_000) // atualiza a cada 60s
+    return ()=> clearInterval(id)
   },[])
 
   const filtered = useMemo(()=>{
@@ -29,16 +43,22 @@ export default function App(){
   },[produtos, query, sortKey, sortDir])
 
   const monthlyData = useMemo(()=>{
+    if (dashboard?.evolucao_mensal) {
+      return (dashboard.evolucao_mensal as Array<any>).map((r:any)=> ({ name: String(r.mes).slice(2), total: Number(r.total||0) }))
+    }
     const labels:string[] = vendas?.mensal?.labels || []
     const vals:number[] = vendas?.mensal?.values || []
     return labels.map((l:string, i:number)=> ({ name:l.slice(2), total: Number(vals[i]||0) }))
-  },[vendas])
+  },[vendas, dashboard])
 
   const topCatData = useMemo(()=>{
+    if (dashboard?.vendas_categoria) {
+      return (dashboard.vendas_categoria as Array<any>).map((r:any)=> ({ name: String(r.categoria||'outros'), total: Number(r.total||0) }))
+    }
     const labels:string[] = vendas?.por_categoria?.labels || []
     const vals:number[] = vendas?.por_categoria?.values || []
     return labels.map((l:string, i:number)=> ({ name:l, total: Number(vals[i]||0) }))
-  },[vendas])
+  },[vendas, dashboard])
 
   function toggleSort(key: keyof Produto){
     if(sortKey===key){ setSortDir(sortDir==='asc'?'desc':'asc') }
@@ -59,9 +79,9 @@ export default function App(){
       <main className="max-w-7xl mx-auto p-4">
         {/* Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card title="Vendas Hoje" value={fmtCurrency(vendas?.totals?.day)} icon={<Flame className="w-5 h-5" />} />
-          <Card title="Vendas Mês" value={fmtCurrency(vendas?.totals?.month)} icon={<Calendar className="w-5 h-5" />} />
-          <Card title="Produtos" value={produtos.length.toString()} icon={<Package className="w-5 h-5" />} />
+          <Card title="Vendas Hoje" value={fmtCurrency(dashboard?.vendas_hoje ?? vendas?.totals?.day)} icon={<Flame className="w-5 h-5" />} />
+          <Card title="Vendas Mês" value={fmtCurrency(dashboard?.vendas_mes ?? vendas?.totals?.month)} icon={<Calendar className="w-5 h-5" />} />
+          <Card title="Produtos" value={(dashboard?.total_produtos ?? produtos.length).toString()} icon={<Package className="w-5 h-5" />} />
           <Card title="Categorias" value={String(new Set(produtos.map(p=>p.categoria)).size)} icon={<Leaf className="w-5 h-5" />} />
         </div>
 

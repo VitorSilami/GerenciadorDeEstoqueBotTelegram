@@ -71,6 +71,7 @@ class DatabaseManager:
 
     def __post_init__(self) -> None:
         self._settings = self.settings
+        self._logged_connection_ok = False
 
     @contextmanager
     def _get_connection(self):
@@ -93,6 +94,10 @@ class DatabaseManager:
                 row_factory=dict_row,  # type: ignore[arg-type]
             )
         try:
+            if not self._logged_connection_ok:
+                import logging
+                logging.getLogger(__name__).info("Banco conectado com sucesso.")
+                self._logged_connection_ok = True
             yield connection
         finally:
             connection.close()
@@ -371,6 +376,80 @@ class DatabaseManager:
                     return [dict(row) for row in cursor.fetchall()]
 
         return await asyncio.to_thread(_list)
+
+    async def sales_total_for_month(self, year: int, month: int) -> Decimal:
+        def _fetch() -> Decimal:
+            with self._get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT COALESCE(SUM(m.quantidade * COALESCE(p.preco, 0)), 0) AS total
+                        FROM tb_movimentacoes m
+                        JOIN tb_produtos p ON p.id = m.id_produto
+                        WHERE m.tipo_movimentacao = 'saida'
+                          AND EXTRACT(YEAR FROM m.data) = %s
+                          AND EXTRACT(MONTH FROM m.data) = %s
+                        """,
+                        (year, month),
+                    )
+                    row = cursor.fetchone()
+                    if not row:
+                        return Decimal("0")
+                    val = dict(row).get("total")
+                    return Decimal(val) if val is not None else Decimal("0")
+
+        return await asyncio.to_thread(_fetch)
+
+    async def sales_totals_by_category_last_30_days(self) -> List[dict]:
+        def _list():
+            with self._get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT p.categoria AS categoria,
+                               COALESCE(SUM(m.quantidade * COALESCE(p.preco, 0)), 0) AS total
+                        FROM tb_movimentacoes m
+                        JOIN tb_produtos p ON p.id = m.id_produto
+                        WHERE m.tipo_movimentacao = 'saida'
+                          AND m.data >= NOW() - INTERVAL '30 days'
+                        GROUP BY p.categoria
+                        ORDER BY total DESC
+                        """
+                    )
+                    return [dict(row) for row in cursor.fetchall()]
+
+        return await asyncio.to_thread(_list)
+
+    async def monthly_sales_last_n_months(self, n: int = 12) -> List[dict]:
+        def _list():
+            with self._get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT to_char(date_trunc('month', m.data), 'YYYY-MM') AS mes,
+                               COALESCE(SUM(m.quantidade * COALESCE(p.preco, 0)), 0) AS total
+                        FROM tb_movimentacoes m
+                        JOIN tb_produtos p ON p.id = m.id_produto
+                        WHERE m.tipo_movimentacao = 'saida'
+                          AND m.data >= date_trunc('month', NOW()) - (%s * INTERVAL '1 month')
+                        GROUP BY mes
+                        ORDER BY mes
+                        """,
+                        (n,),
+                    )
+                    return [dict(row) for row in cursor.fetchall()]
+
+        return await asyncio.to_thread(_list)
+
+    async def count_products(self) -> int:
+        def _count() -> int:
+            with self._get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*) AS c FROM tb_produtos")
+                    row = cursor.fetchone()
+                    return int(dict(row).get("c", 0)) if row else 0
+
+        return await asyncio.to_thread(_count)
 
     async def sales_total_for_date(self, target_date: date) -> Decimal:
         def _fetch() -> Decimal:

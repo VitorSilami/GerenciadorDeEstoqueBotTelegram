@@ -91,6 +91,62 @@ def serve_frontend(path: str | None = None):
     return render_template("dashboard.html")
 
 
+@app.get("/server-products")
+async def server_products():
+    """Página simples renderizada no servidor para listar produtos (prova de conexão DB->HTML)."""
+    items = await db.fetch_products()
+    # Converte Decimals de forma segura para o template
+    def norm(x: dict) -> dict:
+        return {
+            "id": x.get("id"),
+            "nome": x.get("nome"),
+            "tipo": x.get("tipo"),
+            "quantidade": float(d(x.get("quantidade"))),
+            "unidade": x.get("unidade"),
+            "categoria": x.get("categoria"),
+            "preco": float(d(x.get("preco"))),
+            "valor_total": float(d(x.get("quantidade")) * d(x.get("preco"))),
+        }
+    return render_template("index_server.html", produtos=[norm(i) for i in items])
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    """Retorna agregados do painel no formato solicitado.
+
+    Estrutura JSON:
+    {
+      "vendas_hoje": number,
+      "vendas_mes": number,
+      "total_produtos": number,
+      "vendas_categoria": [ { "categoria": str, "total": number }, ... ],
+      "evolucao_mensal": [ { "mes": "YYYY-MM", "total": number }, ... ]
+    }
+    """
+    try:
+        today = datetime.utcnow().date()
+        vendas_hoje = await db.sales_total_for_date(today)
+        vendas_mes = await db.sales_total_for_month(year=today.year, month=today.month)
+        total_produtos = await db.count_products()
+        cat_rows = await db.sales_totals_by_category_last_30_days()
+        monthly_rows = await db.monthly_sales_last_n_months(n=12)
+
+        resp = {
+            "vendas_hoje": float(d(vendas_hoje)),
+            "vendas_mes": float(d(vendas_mes)),
+            "total_produtos": int(total_produtos),
+            "vendas_categoria": [
+                {"categoria": r.get("categoria"), "total": float(d(r.get("total")))} for r in cat_rows
+            ],
+            "evolucao_mensal": [
+                {"mes": r.get("mes"), "total": float(d(r.get("total")))} for r in monthly_rows
+            ],
+        }
+        return jsonify(resp)
+    except Exception as exc:  # pragma: no cover
+        logging.getLogger(__name__).exception("/api/dashboard error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/data")
 async def api_data():
     try:
