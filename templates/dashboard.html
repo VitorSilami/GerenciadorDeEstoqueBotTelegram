@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>☕ Eos Cafés Especiais — Coffee Matrix Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <link href="/static/css/dashboard.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>body{font-family:'Inter',sans-serif}</style>
+</head>
+<body>
+  <nav class="navbar navbar-premium fixed-top py-2">
+    <div class="container-fluid d-flex justify-content-between align-items-center">
+      <div class="brand fs-5">☕ <span class="accent">Eos Cafés Especiais</span></div>
+      <div class="d-flex gap-2 align-items-center filter">
+        <button class="btn btn-outline-gold active" data-filter="all">Tudo</button>
+        <button class="btn btn-outline-gold" data-filter="cafes">Cafés</button>
+        <button class="btn btn-outline-gold" data-filter="embalagens">Embalagens</button>
+        <button class="btn btn-outline-gold" data-filter="brindes">Brindes</button>
+        <button id="btn-refresh" class="btn btn-gold d-flex align-items-center gap-2"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
+        <button id="btn-theme" class="btn btn-outline-gold" title="Alternar tema"><span id="theme-icon">☀️</span></button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container-fluid" style="padding-top:90px; padding-bottom:70px;">
+    <!-- Metric Cards -->
+    <div class="row g-4 mb-2">
+      <div class="col-6 col-xl-3">
+        <div class="card-glass card-metric p-3 fade-in">
+          <div class="d-flex justify-content-between"><span class="text-muted">Total de Itens</span><span>📦</span></div>
+          <h3 id="metric-itens">—</h3>
+          <small class="text-muted">Estoque consolidado</small>
+        </div>
+      </div>
+      <div class="col-6 col-xl-3">
+        <div class="card-glass card-metric p-3 fade-in">
+          <div class="d-flex justify-content-between"><span class="text-muted">Valor Estimado</span><span>💰</span></div>
+            <h3 id="metric-valor">—</h3>
+          <small class="text-muted">Base preço unitário</small>
+        </div>
+      </div>
+      <div class="col-6 col-xl-3">
+        <div class="card-glass card-metric p-3 fade-in">
+          <div class="d-flex justify-content-between"><span class="text-muted">Movimentações</span><span>🧾</span></div>
+          <h3 id="metric-mov">—</h3>
+          <small class="text-muted">Últimos registros</small>
+        </div>
+      </div>
+      <div class="col-6 col-xl-3">
+        <div class="card-glass card-metric p-3 fade-in">
+          <div class="d-flex justify-content-between"><span class="text-muted">Brindes</span><span>🎁</span></div>
+          <h3 id="metric-brindes">—</h3>
+          <small class="text-muted">Período exibido</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts and Tables -->
+    <div class="row g-4 mb-4">
+      <div class="col-12 col-xl-6">
+        <div class="card-glass p-3 h-100 fade-in">
+          <div class="card-header mb-2">� Estoque por Produto</div>
+          <canvas id="chart-bar" height="210"></canvas>
+        </div>
+      </div>
+      <div class="col-12 col-xl-3">
+        <div class="card-glass p-3 h-100 fade-in">
+          <div class="card-header mb-2">☕ Proporção Cafés</div>
+          <canvas id="chart-pie" height="210"></canvas>
+        </div>
+      </div>
+      <div class="col-12 col-xl-3">
+        <div class="card-glass p-3 h-100 fade-in">
+          <div class="card-header mb-2">📈 Linha de Movimentos</div>
+          <canvas id="chart-line" height="210"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4">
+      <div class="col-12 col-xl-6">
+        <div class="card-glass p-3 fade-in">
+          <div class="card-header mb-2">� Visão de Estoque</div>
+          <div class="table-responsive" style="max-height:460px;">
+            <table class="table table-dark-modern table-sm align-middle">
+              <thead><tr><th>Produto</th><th class="text-center">Qtd</th><th style="min-width:130px">%</th><th class="text-end">Preço</th><th class="text-end">Total</th></tr></thead>
+              <tbody id="stock-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card-glass p-3 fade-in">
+          <div class="card-header mb-2">📜 Histórico de Movimentos</div>
+          <div class="table-responsive" style="max-height:460px;">
+            <table class="table table-dark-modern table-sm align-middle">
+              <thead><tr><th>Data</th><th>Item</th><th class="text-center">Qtd</th><th class="text-end">Valor</th></tr></thead>
+              <tbody id="movements-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer-fixed text-center py-2">© Eos Cafés Especiais — Coffee Matrix Dashboard</footer>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
