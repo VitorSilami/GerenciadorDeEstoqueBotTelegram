@@ -109,6 +109,12 @@ async def server_products():
         }
     return render_template("index_server.html", produtos=[norm(i) for i in items])
 
+
+@app.get("/dashboard-corona")
+def dashboard_corona():
+    """Dashboard dark mode inspirado no Corona para Eos Cafés Especiais."""
+    return render_template("dashboard_corona.html")
+
 @app.get("/api/dashboard")
 async def api_dashboard():
     """Retorna agregados do painel no formato solicitado.

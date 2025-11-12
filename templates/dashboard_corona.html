@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eos Cafés Especiais | Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dashboard-corona.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <i class="fas fa-coffee"></i>
+            <h2>Eos Cafés</h2>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" data-view="dashboard">
+                <i class="fas fa-chart-line"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="#" class="nav-item" data-view="estoque">
+                <i class="fas fa-boxes"></i>
+                <span>Estoque</span>
+            </a>
+            <a href="#" class="nav-item" data-view="vendas">
+                <i class="fas fa-shopping-cart"></i>
+                <span>Vendas</span>
+            </a>
+            <a href="#" class="nav-item" data-view="historico">
+                <i class="fas fa-history"></i>
+                <span>Histórico</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <button class="theme-toggle" id="themeToggle">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="content-header">
+            <h1>Dashboard</h1>
+            <div class="header-actions">
+                <button class="btn-refresh" id="refreshBtn">
+                    <i class="fas fa-sync-alt"></i>
+                    <span>Atualizar</span>
+                </button>
+                <div class="header-time" id="lastUpdate">Carregando...</div>
+            </div>
+        </header>
+
+        <!-- KPI Cards Superiores (4) -->
+        <section class="kpi-grid-top">
+            <div class="kpi-card kpi-green">
+                <div class="kpi-icon">
+                    <i class="fas fa-money-bill-wave"></i>
+                </div>
+                <div class="kpi-content">
+                    <h3 class="kpi-title">Vendas Totais</h3>
+                    <p class="kpi-value" id="vendasTotais">R$ 0,00</p>
+                    <span class="kpi-badge">Acumulado</span>
+                </div>
+            </div>
+
+            <div class="kpi-card kpi-blue">
+                <div class="kpi-icon">
+                    <i class="fas fa-box"></i>
+                </div>
+                <div class="kpi-content">
+                    <h3 class="kpi-title">Itens em Estoque</h3>
+                    <p class="kpi-value" id="itensEstoque">0 Unidades</p>
+                    <span class="kpi-badge">Total</span>
+                </div>
+            </div>
+
+            <div class="kpi-card kpi-purple">
+                <div class="kpi-icon">
+                    <i class="fas fa-chart-bar"></i>
+                </div>
+                <div class="kpi-content">
+                    <h3 class="kpi-title">Vendas Hoje</h3>
+                    <p class="kpi-value" id="vendasHoje">0 Unidades</p>
+                    <span class="kpi-badge">Hoje</span>
+                </div>
+            </div>
+
+            <div class="kpi-card kpi-red">
+                <div class="kpi-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="kpi-content">
+                    <h3 class="kpi-title">Alertas de Estoque</h3>
+                    <p class="kpi-value" id="alertasEstoque">0 Itens Baixos</p>
+                    <span class="kpi-badge">Atenção</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Gráfico + Tabela -->
+        <section class="content-grid">
+            <!-- Gráfico de Vendas por Categoria -->
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h2>Vendas por Categoria</h2>
+                    <div class="card-subtitle">Distribuição percentual</div>
+                </div>
+                <div class="card-body">
+                    <canvas id="vendasCategoriaChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Tabela de Estoque -->
+            <div class="card table-card">
+                <div class="card-header">
+                    <h2>Nível de Estoque</h2>
+                    <div class="card-subtitle">Produtos principais</div>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table class="stock-table">
+                            <thead>
+                                <tr>
+                                    <th>Produto</th>
+                                    <th>Categoria</th>
+                                    <th>Qtd. Atual</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="estoqueTableBody">
+                                <tr>
+                                    <td colspan="4" class="loading-row">Carregando dados...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- KPI Cards Inferiores (3) -->
+        <section class="kpi-grid-bottom">
+            <div class="kpi-card-small kpi-purple">
+                <div class="kpi-small-header">
+                    <i class="fas fa-coffee"></i>
+                    <h3>Cafés</h3>
+                </div>
+                <p class="kpi-small-value" id="vendasCafes">R$ 0,00</p>
+                <span class="kpi-small-label">Total em vendas</span>
+            </div>
+
+            <div class="kpi-card-small kpi-blue">
+                <div class="kpi-small-header">
+                    <i class="fas fa-box-open"></i>
+                    <h3>Embalagens</h3>
+                </div>
+                <p class="kpi-small-value" id="vendasEmbalagens">R$ 0,00</p>
+                <span class="kpi-small-label">Total em vendas</span>
+            </div>
+
+            <div class="kpi-card-small kpi-green">
+                <div class="kpi-small-header">
+                    <i class="fas fa-gift"></i>
+                    <h3>Brindes</h3>
+                </div>
+                <p class="kpi-small-value" id="vendasBrindes">R$ 0,00</p>
+                <span class="kpi-small-label">Total em vendas</span>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="/static/js/dashboard-corona.js"></script>
+</body>
+</html>
