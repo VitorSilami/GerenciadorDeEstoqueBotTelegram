@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List
 
@@ -163,25 +164,38 @@ async def api_data():
         logging.getLogger(__name__).exception("/api/data error: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
-    # Aggregate metrics
-    total_quantidade = sum(d(i.get("quantidade")) for i in stock)
-    total_valor = sum(d(i.get("quantidade")) * d(i.get("preco")) for i in stock)
+    # Aggregate metrics for stock
+    total_quantidade = Decimal("0")
+    total_valor = Decimal("0")
+    for i in stock:
+        qty = d(i.get("quantidade"))
+        total_quantidade += qty
+        total_valor += qty * d(i.get("preco"))
 
+    # Pre-compute date values once
+    now_date = datetime.utcnow().date()
+    today_str = now_date.isoformat()
+
+    # Initialize accumulators
     brindes = 0
     entradas = 0
     saidas = 0
-
     line_points: List[Dict[str, Any]] = []
+    sales_by_day: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    top_map: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
 
-    # Build time series (simple aggregated counts per movement order)
-    for idx, m in enumerate(sorted(movements, key=lambda x: x["data"])):
+    # Sort movements once
+    sorted_movements = sorted(movements, key=lambda x: x["data"])
+
+    # Single pass through sorted movements to gather all data
+    for m in sorted_movements:
         tipo = m.get("tipo_movimentacao")
-        observacao = (m.get("observacao") or "")
-        qtd = d(m.get("quantidade"))
+        observacao = m.get("observacao") or ""
         is_brinde = "[BRINDE]" in observacao
         ts: datetime = m["data"]
         label = ts.strftime("%d/%m %H:%M")
 
+        # Count movement types
         if tipo == "entrada":
             entradas += 1
         elif tipo == "saida":
@@ -189,6 +203,7 @@ async def api_data():
         if is_brinde:
             brindes += 1
 
+        # Build line chart point
         line_points.append({
             "t": label,
             "entrada": 1 if tipo == "entrada" else 0,
@@ -196,29 +211,24 @@ async def api_data():
             "brinde": 1 if is_brinde else 0,
         })
 
-    # Sales totals and series (by day) computed from movements
-    from collections import defaultdict
-    sales_by_day: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    today_str = datetime.utcnow().date().isoformat()
+        # Process sales data (only non-brinde saidas)
+        if tipo == "saida" and not is_brinde:
+            qty = d(m.get("quantidade"))
+            vu = m.get("valor_unitario")
+            unit = d(vu) if vu is not None else d(m.get("preco"))
+            total = qty * unit
+            day_key = ts.date().isoformat()
+            sales_by_day[day_key] += total
+
+            # Track top cafés
+            if m.get("categoria") == "cafes":
+                top_map[m.get("nome") or "?"] += qty
+
+    # Compute rolling window totals
     sales_total_day = Decimal("0")
     sales_total_7 = Decimal("0")
     sales_total_30 = Decimal("0")
 
-    for m in movements:
-        is_sale = (m.get("tipo_movimentacao") == "saida") and ("[BRINDE]" not in (m.get("observacao") or ""))
-        if not is_sale:
-            continue
-        qty = d(m.get("quantidade"))
-        vu = m.get("valor_unitario")
-        preco_prod = m.get("preco")
-        unit = (d(vu) if vu is not None else d(preco_prod))
-        total = qty * unit
-        day_key = m["data"].date().isoformat()
-        sales_by_day[day_key] += total
-
-    # Compute rolling windows
-    from datetime import timedelta
-    now_date = datetime.utcnow().date()
     for day_key, value in sales_by_day.items():
         try:
             day_dt = datetime.fromisoformat(day_key).date()
@@ -232,71 +242,73 @@ async def api_data():
         if 0 <= delta_days <= 30:
             sales_total_30 += value
 
-    sales_series_labels = [k for k in sorted(sales_by_day.keys())]
+    sales_series_labels = sorted(sales_by_day.keys())
     sales_series_values = [float(d(sales_by_day[k])) for k in sales_series_labels]
 
-    # Top cafés vendidos (quantidade) a partir de saídas não-brinde
-    top_map: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for m in movements:
-        if m.get("tipo_movimentacao") != "saida":
-            continue
-        if "[BRINDE]" in (m.get("observacao") or ""):
-            continue
-        if m.get("categoria") != "cafes":
-            continue
-        top_map[m.get("nome") or "?"] += d(m.get("quantidade"))
+    # Top cafés (already computed during single pass)
     top_pairs = sorted(top_map.items(), key=lambda x: x[1], reverse=True)[:10]
     top_labels = [name for name, _ in top_pairs]
-    top_values = [float(d(q)) for _, q in top_pairs]
+    top_values = [float(q) for _, q in top_pairs]
 
-    # Bar chart: quantity per product
-    bar_labels = [i.get("nome") for i in stock]
-    bar_values = [float(d(i.get("quantidade"))) for i in stock]
+    # Pre-compute stock data for charts and table
+    bar_labels: List[str] = []
+    bar_values: List[float] = []
+    pie_labels: List[str] = []
+    pie_values: List[float] = []
+    stock_table: List[Dict[str, Any]] = []
+    cafe_items: List[Dict[str, Any]] = []
 
-    # Pie chart: proportion by cafe category only
-    cafe_items = [i for i in stock if i.get("categoria") == "cafes"]
-    total_cafes_q = sum(d(i.get("quantidade")) for i in cafe_items) or Decimal("1")
-    pie_labels = [i.get("nome") for i in cafe_items]
-    pie_values = []
-    for item in cafe_items:
-        qtd = d(item.get("quantidade"))
-        porc = (qtd / total_cafes_q) * Decimal("100") if total_cafes_q > 0 else Decimal("0")
+    for i in stock:
+        nome = i.get("nome")
+        qty = d(i.get("quantidade"))
+        preco = d(i.get("preco"))
+        bar_labels.append(nome)
+        bar_values.append(float(qty))
+        stock_table.append({
+            "id": i.get("id"),
+            "nome": nome,
+            "categoria": i.get("categoria"),
+            "quantidade": float(qty),
+            "preco": float(preco),
+            "valor_total": float(qty * preco),
+            "unidade": i.get("unidade"),
+        })
+        if i.get("categoria") == "cafes":
+            cafe_items.append({"nome": nome, "quantidade": qty})
+
+    # Pie chart: proportion by cafe category
+    total_cafes_q = sum(ci["quantidade"] for ci in cafe_items) or Decimal("1")
+    for ci in cafe_items:
+        pie_labels.append(ci["nome"])
+        porc = (ci["quantidade"] / total_cafes_q) * Decimal("100") if total_cafes_q > 0 else Decimal("0")
         pie_values.append(float(porc))
+
+    # Pre-compute movements data for response
+    movements_data: List[Dict[str, Any]] = []
+    for m in movements:
+        obs = m.get("observacao") or ""
+        movements_data.append({
+            "data": m["data"].isoformat(),
+            "tipo": m.get("tipo_movimentacao"),
+            "nome": m.get("nome"),
+            "categoria": m.get("categoria"),
+            "quantidade": float(d(m.get("quantidade"))),
+            "unidade": m.get("unidade"),
+            "preco": float(d(m.get("preco"))) if m.get("preco") is not None else None,
+            "valor_unitario": float(d(m.get("valor_unitario"))) if m.get("valor_unitario") is not None else None,
+            "is_brinde": "[BRINDE]" in obs,
+        })
 
     data = {
         "generated_at": datetime.utcnow().isoformat(),
         "metrics": {
             "total_itens": float(total_quantidade),
-            "valor_estimado": currency(Decimal(total_valor)),
+            "valor_estimado": currency(total_valor),
             "movimentos_recent": len(movements),
             "total_brindes": brindes,
         },
-        "stock_table": [
-            {
-                "id": i.get("id"),
-                "nome": i.get("nome"),
-                "categoria": i.get("categoria"),
-                "quantidade": float(d(i.get("quantidade"))),
-                "preco": float(d(i.get("preco"))),
-                "valor_total": float(d(i.get("quantidade")) * d(i.get("preco"))),
-                "unidade": i.get("unidade"),
-            }
-            for i in stock
-        ],
-        "movements": [
-            {
-                "data": m["data"].isoformat(),
-                "tipo": m.get("tipo_movimentacao"),
-                "nome": m.get("nome"),
-                "categoria": m.get("categoria"),
-                "quantidade": float(d(m.get("quantidade"))),
-                "unidade": m.get("unidade"),
-                "preco": float(d(m.get("preco"))) if m.get("preco") is not None else None,
-                "valor_unitario": float(d(m.get("valor_unitario"))) if m.get("valor_unitario") is not None else None,
-                "is_brinde": "[BRINDE]" in (m.get("observacao") or ""),
-            }
-            for m in movements
-        ],
+        "stock_table": stock_table,
+        "movements": movements_data,
         "charts": {
             "bar": {"labels": bar_labels, "data": bar_values},
             "pie": {"labels": pie_labels, "data": pie_values},
@@ -375,77 +387,79 @@ async def api_vendas():
     # Usa uma janela grande para estatísticas (ajuste conforme necessidade)
     movs = await db.list_recent_all_movements(limit=5000)
 
-    from collections import defaultdict
-    from datetime import timedelta
-
-    def is_venda(m) -> bool:
-        return (m.get("tipo_movimentacao") == "saida") and ("[BRINDE]" not in (m.get("observacao") or ""))
-
     # Totais do dia e mês corrente
     now = datetime.utcnow()
-    today_key = now.date().isoformat()
+    now_date = now.date()
+    today_key = now_date.isoformat()
     month_key = now.strftime("%Y-%m")
     total_day = Decimal("0")
     total_month = Decimal("0")
 
     # Por categoria (últimos 30 dias)
-    cat_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    cat_totals: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
 
     # Comparativo Cafés vs Outros (30 dias)
-    comp = {"cafes": Decimal("0"), "outros": Decimal("0")}
+    comp_cafes = Decimal("0")
+    comp_outros = Decimal("0")
 
     # Série mensal (últimos 12 meses)
-    monthly: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    monthly: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     start_12m = (now.replace(day=1) - timedelta(days=365)).date()
 
+    # Single pass through movements
     for m in movs:
-        if not is_venda(m):
+        tipo = m.get("tipo_movimentacao")
+        obs = m.get("observacao") or ""
+        # Check if it's a valid sale (saida and not a brinde)
+        if tipo != "saida" or "[BRINDE]" in obs:
             continue
+
         day = m["data"].date()
         day_key = day.isoformat()
         month_k = day.strftime("%Y-%m")
         qty = d(m.get("quantidade"))
-        unit = d(m.get("valor_unitario")) if m.get("valor_unitario") is not None else d(m.get("preco"))
+        vu = m.get("valor_unitario")
+        unit = d(vu) if vu is not None else d(m.get("preco"))
         val = qty * unit
+
         # Totais
         if day_key == today_key:
             total_day += val
         if month_k == month_key:
             total_month += val
-        # Por categoria e comparativo (30 dias)
-        if (now.date() - day).days <= 30:
+
+        # Por categoria e comparativo (últimos 30 dias)
+        delta_days = (now_date - day).days
+        if delta_days <= 30:
             cat = m.get("categoria") or "outros"
             cat_totals[cat] += val
             if cat == "cafes":
-                comp["cafes"] += val
+                comp_cafes += val
             else:
-                comp["outros"] += val
+                comp_outros += val
+
         # Mensal (12 meses)
         if day >= start_12m:
             monthly[month_k] += val
-
-    # Normalizações para JSON
-    def to_float_map(dct):
-        return {k: float(d(v)) for k, v in dct.items()}
 
     # Ordena meses
     months_sorted = sorted(monthly.keys())
     resp = {
         "totals": {
-            "day": float(d(total_day)),
-            "month": float(d(total_month)),
+            "day": float(total_day),
+            "month": float(total_month),
         },
         "por_categoria": {
             "labels": list(cat_totals.keys()),
-            "values": [float(d(v)) for v in cat_totals.values()],
+            "values": [float(v) for v in cat_totals.values()],
         },
         "mensal": {
             "labels": months_sorted,
-            "values": [float(d(monthly[m])) for m in months_sorted],
+            "values": [float(monthly[m]) for m in months_sorted],
         },
         "comparativo": {
             "labels": ["Cafés", "Outros"],
-            "values": [float(d(comp["cafes"])), float(d(comp["outros"]))],
+            "values": [float(comp_cafes), float(comp_outros)],
         },
     }
     return jsonify(resp)

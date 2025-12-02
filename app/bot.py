@@ -143,19 +143,6 @@ class EosBot:
             "Toque no botão desejado abaixo 👇",
         ]
         return "\n".join(body)
-        title = "� <b>Entrada de produtos</b>"
-        subtitle = "Vamos abastecer o estoque. Escolha por onde começar:".strip()
-        body = [
-            title,
-            "",
-            subtitle,
-            "",
-            "☕ Cafés — blends especiais e gourmets",
-            "📦 Embalagens — valorize a apresentação",
-            "",
-            "Toque no botão desejado abaixo 👇",
-        ]
-        return "\n".join(body)
 
     def _pair_labels(self, labels: List[str], icon: str) -> List[str]:
         rows: List[str] = []
@@ -1974,19 +1961,6 @@ class EosBot:
         *,
         from_callback: bool = False,
     ) -> None:
-        movimentos = await self.db.list_recent_movements(movement_type="saida", limit=10)
-
-        if not movimentos:
-            text = "📊 Nenhuma saída registrada até o momento."
-        else:
-            linhas: List[str] = ["📊 Últimas saídas:"]
-            for item in movimentos:
-                data: datetime = item["data"]
-                quantidade: Decimal = item["quantidade"]
-                linhas.append(
-                    f"{data.strftime('%d/%m %H:%M')} • {item['nome']} → {format_quantity(quantidade)} {item['unidade']}"
-                )
-            text = "\n".join(linhas)
         movimentos = await self.db.list_recent_all_movements(limit=25)
 
         if not movimentos:
@@ -1999,7 +1973,7 @@ class EosBot:
                 tipo: str = item["tipo_movimentacao"]
                 unidade = item.get("unidade", "un")
                 nome = item.get("nome", "—")
-                observ = (item.get("observacao") or "")
+                observ = item.get("observacao") or ""
                 is_brinde = "[BRINDE]" in observ
                 categoria = item.get("categoria")
                 preco_base = Decimal(item.get("preco") or 0)
