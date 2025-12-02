@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Optional
 from typing import Any, Dict, List, Optional
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from .config import Settings
 from .products import PRODUCT_SEEDS
@@ -68,39 +70,62 @@ class InsufficientStockError(DatabaseError):
 @dataclass
 class DatabaseManager:
     settings: Settings
+    _pool: Optional[ConnectionPool] = field(default=None, init=False, repr=False)
+    _logged_connection_ok: bool = field(default=False, init=False, repr=False)
+    _pool_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._settings = self.settings
+        self._pool = None
         self._logged_connection_ok = False
+        self._pool_lock = threading.Lock()
 
-    @contextmanager
-    def _get_connection(self):
-        # Prefer DATABASE_URL if provided; otherwise use discrete parameters.
+    def _get_conninfo(self) -> str:
+        """Build connection string for the pool."""
         if getattr(self._settings, "database_url", None):
             dsn = self._settings.database_url or ""
             # Ensure sslmode is present when needed (e.g., Render managed Postgres)
             if "sslmode=" not in dsn and getattr(self._settings, "db_sslmode", ""):
                 sep = "&" if ("?" in dsn) else "?"
                 dsn = f"{dsn}{sep}sslmode={self._settings.db_sslmode}"
-            connection = psycopg.connect(dsn, row_factory=dict_row)  # type: ignore[arg-type]
+            return dsn
         else:
-            connection = psycopg.connect(
-                dbname=self._settings.db_name,
-                user=self._settings.db_user,
-                password=self._settings.db_password,
-                host=self._settings.db_host,
-                port=self._settings.db_port,
-                sslmode=getattr(self._settings, "db_sslmode", "disable"),
-                row_factory=dict_row,  # type: ignore[arg-type]
+            # Build connection string from discrete parameters
+            sslmode = getattr(self._settings, "db_sslmode", "disable")
+            return (
+                f"host={self._settings.db_host} "
+                f"port={self._settings.db_port} "
+                f"dbname={self._settings.db_name} "
+                f"user={self._settings.db_user} "
+                f"password={self._settings.db_password} "
+                f"sslmode={sslmode}"
             )
-        try:
-            if not self._logged_connection_ok:
-                import logging
-                logging.getLogger(__name__).info("Banco conectado com sucesso.")
-                self._logged_connection_ok = True
+
+    def _ensure_pool(self) -> ConnectionPool:
+        """Lazily create connection pool on first use (thread-safe)."""
+        if self._pool is not None:
+            return self._pool
+        with self._pool_lock:
+            # Double-check after acquiring lock
+            if self._pool is None:
+                conninfo = self._get_conninfo()
+                self._pool = ConnectionPool(
+                    conninfo,
+                    min_size=1,
+                    max_size=10,
+                    kwargs={"row_factory": dict_row},
+                )
+                if not self._logged_connection_ok:
+                    logging.getLogger(__name__).info("Banco conectado com sucesso (pool inicializado).")
+                    self._logged_connection_ok = True
+            return self._pool
+
+    @contextmanager
+    def _get_connection(self):
+        """Get a connection from the pool."""
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             yield connection
-        finally:
-            connection.close()
 
     async def ensure_schema(self) -> None:
         def _create():
