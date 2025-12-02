@@ -26,6 +26,9 @@ db = DatabaseManager(settings)
 # ---- Helpers ----
 
 def d(val) -> Decimal:
+    """Safely convert value to Decimal, avoiding unnecessary conversion if already Decimal."""
+    if isinstance(val, Decimal):
+        return val
     try:
         return Decimal(str(val))
     except Exception:
@@ -33,7 +36,7 @@ def d(val) -> Decimal:
 
 
 def currency(val: Decimal) -> str:
-    q = d(val).quantize(Decimal("0.01"))
+    q = val.quantize(Decimal("0.01")) if isinstance(val, Decimal) else d(val).quantize(Decimal("0.01"))
     formatted = f"{q:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"R$ {formatted}"
 

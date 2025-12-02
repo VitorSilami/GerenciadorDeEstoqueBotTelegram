@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date
@@ -71,11 +72,13 @@ class DatabaseManager:
     settings: Settings
     _pool: Optional[ConnectionPool] = field(default=None, init=False, repr=False)
     _logged_connection_ok: bool = field(default=False, init=False, repr=False)
+    _pool_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._settings = self.settings
         self._pool = None
         self._logged_connection_ok = False
+        self._pool_lock = threading.Lock()
 
     def _get_conninfo(self) -> str:
         """Build connection string for the pool."""
@@ -99,19 +102,23 @@ class DatabaseManager:
             )
 
     def _ensure_pool(self) -> ConnectionPool:
-        """Lazily create connection pool on first use."""
-        if self._pool is None:
-            conninfo = self._get_conninfo()
-            self._pool = ConnectionPool(
-                conninfo,
-                min_size=1,
-                max_size=10,
-                kwargs={"row_factory": dict_row},
-            )
-            if not self._logged_connection_ok:
-                logging.getLogger(__name__).info("Banco conectado com sucesso (pool inicializado).")
-                self._logged_connection_ok = True
-        return self._pool
+        """Lazily create connection pool on first use (thread-safe)."""
+        if self._pool is not None:
+            return self._pool
+        with self._pool_lock:
+            # Double-check after acquiring lock
+            if self._pool is None:
+                conninfo = self._get_conninfo()
+                self._pool = ConnectionPool(
+                    conninfo,
+                    min_size=1,
+                    max_size=10,
+                    kwargs={"row_factory": dict_row},
+                )
+                if not self._logged_connection_ok:
+                    logging.getLogger(__name__).info("Banco conectado com sucesso (pool inicializado).")
+                    self._logged_connection_ok = True
+            return self._pool
 
     @contextmanager
     def _get_connection(self):
